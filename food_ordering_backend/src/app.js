@@ -3,9 +3,25 @@ const express = require('express');
 const routes = require('./routes');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('../swagger');
+const { initDb, getDbInfo } = require('./db');
 
 // Initialize express app
 const app = express();
+
+// Initialize DB (non-blocking await via IIFE)
+(async () => {
+  try {
+    const db = await initDb();
+    if (db) {
+      const info = getDbInfo();
+      console.log(`[DB] Ready (${info.client}) for database: ${info.database}@${info.host}`);
+    } else {
+      console.warn('[DB] Skipped DB init (missing env); API will still run for non-DB endpoints.');
+    }
+  } catch (e) {
+    console.error('[DB] Initialization failed:', e.message);
+  }
+})();
 
 app.use(cors({
   origin: '*',
