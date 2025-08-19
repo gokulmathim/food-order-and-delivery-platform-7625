@@ -1,4 +1,8 @@
-// This file will export middleware as the application grows
+const { authenticate, requireRole } = require('./auth');
+const { validateBody } = require('./validate');
+
 module.exports = {
-  // Add your middleware here
+  authenticate,
+  requireRole,
+  validateBody,
 };
