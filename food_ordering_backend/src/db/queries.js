@@ -7,18 +7,10 @@ async function findUserByEmail(email) {
   /** Find a user by email. Returns row or null. */
   const q = getQuery();
   const sql = 'SELECT * FROM users WHERE email = $1 LIMIT 1';
-  // For MySQL, $1 style won't work; adapt simple replacement when needed
-  // Our query() wrapper accepts pg-style params for Postgres and mysql2 will map '?'.
-  // To stay engine-agnostic, we implement a tiny adapter:
-  if (q.toString && q.toString().includes('mysql')) {
-    // This branch likely won't be true; safeguarding with a generic implementation
-  }
   try {
-    // Postgres path
     const { rows } = await q(sql, [email]);
     return rows?.[0] || null;
   } catch (e) {
-    // Attempt MySQL fallback with '?' placeholders
     const mysqlSql = 'SELECT * FROM users WHERE email = ? LIMIT 1';
     const { rows } = await q(mysqlSql, [email]);
     return Array.isArray(rows) ? rows[0] || null : null;
@@ -39,8 +31,7 @@ async function createUser({ email, hashed_password, full_name, phone, role = 'cu
   } catch (e) {
     const mySql = `INSERT INTO users (email, phone, hashed_password, full_name, role)
                    VALUES (?, ?, ?, ?, ?)`;
-    const res = await q(mySql, params);
-    // mysql2 returns rows for SELECT; for INSERT we cannot rely on RETURNING; ignore id
+    await q(mySql, params);
     return null;
   }
 }
@@ -49,7 +40,6 @@ async function createUser({ email, hashed_password, full_name, phone, role = 'cu
 async function getActiveCart(userId) {
   /** Retrieve or create an active cart for user. */
   const q = getQuery();
-  // Try to find existing
   try {
     const { rows } = await q('SELECT * FROM carts WHERE user_id = $1 AND status = $2 ORDER BY id DESC LIMIT 1', [userId, 'active']);
     if (rows && rows[0]) return rows[0];
@@ -57,13 +47,11 @@ async function getActiveCart(userId) {
     const { rows } = await q('SELECT * FROM carts WHERE user_id = ? AND status = ? ORDER BY id DESC LIMIT 1', [userId, 'active']);
     if (Array.isArray(rows) && rows[0]) return rows[0];
   }
-  // Create if not exists
   try {
     const { rows } = await q('INSERT INTO carts (user_id, status) VALUES ($1, $2) RETURNING *', [userId, 'active']);
     return rows?.[0] || null;
   } catch (e) {
     await q('INSERT INTO carts (user_id, status) VALUES (?, ?)', [userId, 'active']);
-    // Re-read
     const { rows } = await q('SELECT * FROM carts WHERE user_id = ? AND status = ? ORDER BY id DESC LIMIT 1', [userId, 'active']);
     return Array.isArray(rows) ? rows[0] || null : null;
   }
@@ -73,7 +61,6 @@ async function getActiveCart(userId) {
 async function addItemToCart(cartId, menuItemId, quantity, unitPriceCents, currency = 'USD', notes = null) {
   /** Upsert-like behavior to add or increment an item in a cart. */
   const q = getQuery();
-  // Try update if exists
   try {
     const { rows } = await q('SELECT id, quantity FROM cart_items WHERE cart_id = $1 AND menu_item_id = $2 LIMIT 1', [cartId, menuItemId]);
     if (rows && rows[0]) {
@@ -89,7 +76,6 @@ async function addItemToCart(cartId, menuItemId, quantity, unitPriceCents, curre
       return true;
     }
   }
-  // Insert new
   try {
     await q('INSERT INTO cart_items (cart_id, menu_item_id, quantity, unit_price_cents, currency, notes) VALUES ($1, $2, $3, $4, $5, $6)', [cartId, menuItemId, quantity, unitPriceCents, currency, notes]);
   } catch (e) {
@@ -98,10 +84,24 @@ async function addItemToCart(cartId, menuItemId, quantity, unitPriceCents, curre
   return true;
 }
 
+// PUBLIC_INTERFACE
+async function getOrderOwner(orderId) {
+  /** Returns user_id for an order id. */
+  const q = getQuery();
+  try {
+    const { rows } = await q('SELECT user_id FROM orders WHERE id = $1', [orderId]);
+    return rows?.[0]?.user_id || null;
+  } catch (_) {
+    const { rows } = await q('SELECT user_id FROM orders WHERE id = ?', [orderId]);
+    return Array.isArray(rows) ? rows[0]?.user_id || null : null;
+  }
+}
+
 module.exports = {
   findUserByEmail,
   createUser,
   getActiveCart,
   addItemToCart,
+  getOrderOwner,
 };
 
